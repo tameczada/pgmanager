@@ -460,7 +460,7 @@ body { overflow: hidden; }
   background: var(--bg2); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 12px 14px; margin-bottom: 8px;
   transition: var(--transition);
-margin-top:400px;}
+}
 .saved-conn-item:hover { border-color: var(--border2); background: var(--bg3); }
 .saved-conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text3); flex-shrink: 0; }
 .saved-conn-dot.last-used { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
@@ -553,7 +553,7 @@ if ('serviceWorker' in navigator) {
 
       <!-- ─── CONNECT PANEL ─── -->
       <div class="panel active" id="panel-connect">
-        <div class="connect-panel" style="height:100%;overflow-y:auto;flex-direction:column;align-items:center;gap:24px;padding:32px 20px">
+        <div class="connect-panel" style="height:100%;overflow-y:auto;flex-direction:column;align-items:center;gap:24px;padding:32px 20px;margin-top:400;">
 
           <!-- Saved connections list -->
           <div id="savedConnsList" style="width:100%;max-width:560px;display:none; margin-top:540px;">
