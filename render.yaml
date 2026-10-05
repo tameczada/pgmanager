@@ -11,3 +11,5 @@ services:
         value: production
       - key: PORT
         value: 3001
+      - key: APP_PASSWORD
+        generateValue: true   # senha gerada pelo Render (veja em Environment)

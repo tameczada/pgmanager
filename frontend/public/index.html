@@ -1121,6 +1121,53 @@ function notify(msg, type = 'info', duration = 3500) {
   setTimeout(() => el.remove(), duration);
 }
 
+// ─── PERSISTÊNCIA DA ABA ATIVA ────────────────────────────────────────────────
+const VIEW_KEY = 'pgmanager_view';
+function saveView() {
+  if (!state.connected) return;
+  try {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({
+      panel: state.currentPanel,
+      schema: state.currentSchema,
+      table: state.currentTable,
+    }));
+  } catch (e) {}
+}
+function loadSavedView() {
+  try { return JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch (e) { return null; }
+}
+function clearSavedView() { try { localStorage.removeItem(VIEW_KEY); } catch (e) {} }
+
+async function restoreView() {
+  const v = loadSavedView();
+  const valid = ['dashboard','tables','tabledata','query','databases','views','indexes','functions','users','connections'];
+  if (!v || !valid.includes(v.panel)) return showPanel('dashboard');
+  if (v.schema) {
+    state.currentSchema = v.schema;
+    ['schemaSelect','viewSchemaSelect','idxSchemaSelect','fnSchemaSelect'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (sel && [...sel.options].some(o => o.value === v.schema)) sel.value = v.schema;
+    });
+  }
+  if (v.panel === 'tabledata') {
+    if (v.table) { state.currentSchema = v.schema || 'public'; return openTable(state.currentSchema, v.table); }
+    return showPanel('tables');
+  }
+  showPanel(v.panel);
+}
+
+// Marca a UI como conectada (usado no refresh e na reconexão automática)
+async function applyConnectedUI(info) {
+  state.connected = true;
+  document.getElementById('connStatus').classList.add('connected');
+  document.getElementById('connInfo').textContent = `${info.current_user}@${info.current_database}`;
+  document.getElementById('btnConnect').style.display = 'none';
+  document.getElementById('btnDisconnect').style.display = '';
+  showConnectedNav();
+  await loadSchemas();
+  await restoreView();
+}
+
 // ─── CONNECTION ───────────────────────────────────────────────────────────────
 async function connect() {
   const btn = document.getElementById('btnConnectSubmit');
@@ -1164,6 +1211,7 @@ async function disconnect() {
   document.getElementById('btnDisconnect').style.display = 'none';
   hideConnectedNav();
   document.getElementById('schemaTree').style.display = 'none';
+  clearSavedView();
   showPanel('connect');
   notify('Desconectado', 'info');
 }
@@ -1189,6 +1237,7 @@ function showPanel(name) {
   const navItem = document.querySelector(`[data-panel="${name}"]`);
   if (navItem) navItem.classList.add('active');
   state.currentPanel = name;
+  saveView();
   // Close mobile sidebar when navigating
   if (window.innerWidth <= 768) closeSidebar();
   // auto-load
@@ -2281,17 +2330,22 @@ renderSavedConns();
   try {
     const status = await api('GET', '/api/status');
     if (status.connected) {
-      state.connected = true;
-      const info = status.info;
-      document.getElementById('connStatus').classList.add('connected');
-      document.getElementById('connInfo').textContent = `${info.current_user}@${info.current_database}`;
-      document.getElementById('btnConnect').style.display = 'none';
-      document.getElementById('btnDisconnect').style.display = '';
-      showConnectedNav();
-      await loadSchemas();
-      showPanel('dashboard');
+      await applyConnectedUI(status.info);
+      return;
     }
-  } catch(e) {}
+  } catch (e) {}
+  // Servidor sem conexão ativa (ex.: reiniciou). Tenta reconectar com a última conexão usada.
+  try {
+    const lastId = localStorage.getItem(LAST_USED_KEY);
+    const conn = lastId && getSavedConns().find(c => c.id === lastId);
+    if (conn && loadSavedView()) {
+      const data = await api('POST', '/api/connect', {
+        host: conn.host, port: conn.port, user: conn.user,
+        password: conn.password || '', database: conn.database, ssl: conn.ssl,
+      });
+      if (data.success) await applyConnectedUI(data.info);
+    }
+  } catch (e) { notify('Não foi possível reconectar: ' + e.message, 'warning', 5000); }
 })();
 </script>
 </body>

@@ -9,9 +9,38 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
-app.use(cors());
+app.use(cors({ origin: false })); // mesma origem apenas (front e API são servidos juntos)
 app.use(express.json({ limit: '50mb' }));
+
+// ─── Autenticação (HTTP Basic) ─────────────────────────────────────────────────
+// Se APP_PASSWORD estiver definida, TODO acesso (página + API) exige senha.
+// Usuário: qualquer um (padrão "admin"); senha: APP_PASSWORD.
+const crypto = require('crypto');
+function safeEqual(a, b) {
+  const ha = crypto.createHash('sha256').update(String(a)).digest();
+  const hb = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+app.use((req, res, next) => {
+  const appPass = process.env.APP_PASSWORD;
+  if (!appPass) return next();
+  if (req.path === '/healthz') return next();
+  const header = req.headers.authorization || '';
+  if (header.startsWith('Basic ')) {
+    const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
+    const idx = decoded.indexOf(':');
+    const pass = idx >= 0 ? decoded.slice(idx + 1) : '';
+    if (safeEqual(pass, appPass)) return next();
+  }
+  res.set('WWW-Authenticate', 'Basic realm="PGManager", charset="UTF-8"');
+  res.status(401).send('Autenticação necessária');
+});
+app.get('/healthz', (req, res) => res.send('ok'));
+
 app.use(express.static(path.join(__dirname, '../frontend/public')));
+
+// Escapa identificadores SQL (schema/tabela/coluna)
+const qi = (id) => '"' + String(id).replace(/"/g, '""') + '"';
 
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 2000 });
 app.use('/api/', limiter);
@@ -88,7 +117,7 @@ app.post('/api/connect', async (req, res) => {
     const result = await client.query('SELECT version(), current_database(), current_user, pg_postmaster_start_time()');
     client.release();
     await testPool.end();
-    getPool({ host, port, user, password, database });
+    getPool({ host, port, user, password, database, ssl });
     res.json({ success: true, info: result.rows[0] });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -132,8 +161,8 @@ app.get('/api/databases', async (req, res) => {
 app.post('/api/databases', async (req, res) => {
   try {
     const { name, owner, encoding, collation } = req.body;
-    let sql = `CREATE DATABASE "${name}"`;
-    if (owner) sql += ` OWNER "${owner}"`;
+    let sql = `CREATE DATABASE ${qi(name)}`;
+    if (owner) sql += ` OWNER ${qi(owner)}`;
     if (encoding) sql += ` ENCODING '${encoding}'`;
     if (collation) sql += ` LC_COLLATE '${collation}' LC_CTYPE '${collation}'`;
     await query(sql);
@@ -144,7 +173,7 @@ app.post('/api/databases', async (req, res) => {
 app.delete('/api/databases/:name', async (req, res) => {
   try {
     const { name } = req.params;
-    await query(`DROP DATABASE IF EXISTS "${name}"`);
+    await query(`DROP DATABASE IF EXISTS ${qi(name)}`);
     res.json({ success: true, message: `Database "${name}" dropped` });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -187,7 +216,7 @@ app.post('/api/tables', async (req, res) => {
   try {
     const { schema = 'public', name, columns } = req.body;
     const colDefs = columns.map(c => {
-      let def = `"${c.name}" ${c.type}`;
+      let def = `${qi(c.name)} ${c.type}`;
       if (c.length) def += `(${c.length})`;
       if (c.primaryKey) def += ' PRIMARY KEY';
       if (c.notNull) def += ' NOT NULL';
@@ -195,7 +224,7 @@ app.post('/api/tables', async (req, res) => {
       if (c.default) def += ` DEFAULT ${c.default}`;
       return def;
     }).join(',\n  ');
-    await query(`CREATE TABLE "${schema}"."${name}" (\n  ${colDefs}\n)`);
+    await query(`CREATE TABLE ${qi(schema)}.${qi(name)} (\n  ${colDefs}\n)`);
     res.json({ success: true, message: `Table "${name}" created` });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -204,7 +233,7 @@ app.delete('/api/tables/:schema/:name', async (req, res) => {
   try {
     const { schema, name } = req.params;
     const cascade = req.query.cascade === 'true' ? ' CASCADE' : '';
-    await query(`DROP TABLE IF EXISTS "${schema}"."${name}"${cascade}`);
+    await query(`DROP TABLE IF EXISTS ${qi(schema)}.${qi(name)}${cascade}`);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -257,19 +286,20 @@ app.get('/api/tables/:schema/:name/data', async (req, res) => {
       ? Math.min(requestedLimit, 100000)  // export: até 100k rows
       : Math.min(requestedLimit, 1000);   // browser: máx 1000
     const offset = parseInt(req.query.offset) || 0;
-    const orderBy = req.query.orderBy ? `ORDER BY "${req.query.orderBy}" ${req.query.dir || 'ASC'}` : '';
+    const dir = String(req.query.dir || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+    const orderBy = req.query.orderBy ? `ORDER BY ${qi(req.query.orderBy)} ${dir}` : '';
     const where = req.query.search && req.query.searchCol
-      ? `WHERE CAST("${req.query.searchCol}" AS TEXT) ILIKE $1`
+      ? `WHERE CAST(${qi(req.query.searchCol)} AS TEXT) ILIKE $1`
       : '';
     const searchParam = `%${req.query.search || ''}%`;
     const countResult = await query(
-      `SELECT COUNT(*) FROM "${schema}"."${name}" ${where}`,
+      `SELECT COUNT(*) FROM ${qi(schema)}.${qi(name)} ${where}`,
       where ? [searchParam] : []
     );
     const dataResult = await query(
       where
-        ? `SELECT * FROM "${schema}"."${name}" WHERE CAST("${req.query.searchCol}" AS TEXT) ILIKE $1 ${orderBy} LIMIT $2 OFFSET $3`
-        : `SELECT * FROM "${schema}"."${name}" ${orderBy} LIMIT $1 OFFSET $2`,
+        ? `SELECT * FROM ${qi(schema)}.${qi(name)} WHERE CAST(${qi(req.query.searchCol)} AS TEXT) ILIKE $1 ${orderBy} LIMIT $2 OFFSET $3`
+        : `SELECT * FROM ${qi(schema)}.${qi(name)} ${orderBy} LIMIT $1 OFFSET $2`,
       where ? [searchParam, limit, offset] : [limit, offset]
     );
     res.json({ rows: dataResult.rows, total: parseInt(countResult.rows[0].count), limit, offset });
@@ -282,10 +312,10 @@ app.post('/api/tables/:schema/:name/data', async (req, res) => {
     const data = req.body;
     const keys = Object.keys(data);
     const vals = Object.values(data);
-    const cols = keys.map(k => `"${k}"`).join(', ');
+    const cols = keys.map(qi).join(', ');
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
     const result = await query(
-      `INSERT INTO "${schema}"."${name}" (${cols}) VALUES (${placeholders}) RETURNING *`,
+      `INSERT INTO ${qi(schema)}.${qi(name)} (${cols}) VALUES (${placeholders}) RETURNING *`,
       vals
     );
     res.json({ success: true, row: result.rows[0] });
@@ -298,12 +328,12 @@ app.put('/api/tables/:schema/:name/data', async (req, res) => {
     const { where, data } = req.body;
     const dataKeys = Object.keys(data);
     const dataVals = Object.values(data);
-    const setClause = dataKeys.map((k, i) => `"${k}" = $${i + 1}`).join(', ');
+    const setClause = dataKeys.map((k, i) => `${qi(k)} = $${i + 1}`).join(', ');
     const whereKeys = Object.keys(where);
     const whereVals = Object.values(where);
-    const whereClause = whereKeys.map((k, i) => `"${k}" = $${dataKeys.length + i + 1}`).join(' AND ');
+    const whereClause = whereKeys.map((k, i) => `${qi(k)} = $${dataKeys.length + i + 1}`).join(' AND ');
     const result = await query(
-      `UPDATE "${schema}"."${name}" SET ${setClause} WHERE ${whereClause} RETURNING *`,
+      `UPDATE ${qi(schema)}.${qi(name)} SET ${setClause} WHERE ${whereClause} RETURNING *`,
       [...dataVals, ...whereVals]
     );
     res.json({ success: true, row: result.rows[0], affected: result.rowCount });
@@ -316,9 +346,9 @@ app.delete('/api/tables/:schema/:name/data', async (req, res) => {
     const { where } = req.body;
     const whereKeys = Object.keys(where);
     const whereVals = Object.values(where);
-    const whereClause = whereKeys.map((k, i) => `"${k}" = $${i + 1}`).join(' AND ');
+    const whereClause = whereKeys.map((k, i) => `${qi(k)} = $${i + 1}`).join(' AND ');
     const result = await query(
-      `DELETE FROM "${schema}"."${name}" WHERE ${whereClause}`,
+      `DELETE FROM ${qi(schema)}.${qi(name)} WHERE ${whereClause}`,
       whereVals
     );
     res.json({ success: true, affected: result.rowCount });
@@ -352,6 +382,7 @@ app.post('/api/query/batch', async (req, res) => {
     if (!Array.isArray(statements) || !statements.length)
       return res.status(400).json({ error: 'statements must be a non-empty array' });
 
+    if (!pool) return res.status(400).json({ error: 'Não conectado ao banco' });
     const results = [];
     const client = await pool.connect();
     try {
