@@ -22,7 +22,7 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(ha, hb);
 }
 app.use((req, res, next) => {
-  const appPass = process.env.APP_PASSWORD;
+  const appPass = luian;
   if (!appPass) return next();
   if (req.path === '/healthz') return next();
   const header = req.headers.authorization || '';
@@ -556,4 +556,6 @@ app.listen(PORT, () => {
   console.log(`✅  Server running on http://localhost:${PORT}`);
   console.log(`📁  API available at http://localhost:${PORT}/api`);
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+});
+━━━\n`);
 });
