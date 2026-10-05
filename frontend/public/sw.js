@@ -1,3 +1,0 @@
-self.addEventListener('install', () => {
-  console.log('SW instalado');
-});
