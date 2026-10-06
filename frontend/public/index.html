@@ -162,7 +162,11 @@ body { overflow: hidden; }
 .panel-content.no-pad { padding: 0; }
 
 /* ─── CONNECT PANEL ─────────────────────────────────────────────────────────── */
-.connect-panel { display: flex; align-items: center; justify-content: center; padding: 40px;}
+.connect-panel {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  gap: 24px; width: 100%; height: 100%; overflow-y: auto;
+  padding: 32px 20px 160px; /* folga embaixo para a barra de navegação */
+}
 .connect-card {
   background: var(--bg2); border: 1px solid var(--border);
   border-radius: var(--radius2); padding: 40px; width: 100%; max-width: 480px;
@@ -363,7 +367,7 @@ body { overflow: hidden; }
 
   /* Connect card full width */
   .connect-card { padding: 24px 18px; }
-  .connect-panel { padding: 16px; align-items: flex-start; }
+  .connect-panel { padding: 16px 16px 180px; }
   .form-row { grid-template-columns: 1fr; gap: 0; }
 
   /* Table toolbar wraps */
@@ -553,10 +557,10 @@ if ('serviceWorker' in navigator) {
 
       <!-- ─── CONNECT PANEL ─── -->
       <div class="panel active" id="panel-connect">
-        <div class="connect-panel" style="height:100%;overflow-y:auto;flex-direction:column;align-items:center;gap:24px;padding:32px 20px;margin-top:400;">
+        <div class="connect-panel">
 
           <!-- Saved connections list -->
-          <div id="savedConnsList" style="width:100%;max-width:560px;display:none; margin-top:540px;">
+          <div id="savedConnsList" style="width:100%;max-width:560px;display:none;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
               <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3);font-weight:600">💾 Conexões Salvas</div>
               <button class="btn btn-ghost btn-sm" onclick="dedupConnections()" title="Remover duplicatas">🧹 Limpar duplicatas</button>
@@ -565,7 +569,7 @@ if ('serviceWorker' in navigator) {
           </div>
 
           <!-- Connect form -->
-          <div class="connect-card" style="width:100%;max-width:560px; margin-bottom:190px;">
+          <div class="connect-card" style="width:100%;max-width:560px;">
             <div class="connect-logo">🐘</div>
             <div class="connect-title">PostgreSQL Manager</div>
             <div class="connect-subtitle" id="connectFormLabel">Nova conexão</div>
