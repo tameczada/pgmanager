@@ -53,7 +53,4 @@ https://pgmanager.onrender.com
   A próxima visita pode demorar ~20s para acordar.
 - **Conexões**: você conecta ao banco pelo formulário do app.
   Não é necessário configurar variáveis de ambiente.
-- **Segurança**: o acesso é protegido por senha (HTTP Basic) quando a variável
-  `APP_PASSWORD` está definida. No Render ela é gerada automaticamente: veja o valor em
-  *Dashboard → seu serviço → Environment*. O navegador pedirá usuário (qualquer um) e essa senha.
-  Localmente, sem `APP_PASSWORD`, não há senha.
+- **Segurança**: o app não tem login. Use apenas localmente ou não divulgue a URL.

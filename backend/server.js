@@ -12,31 +12,6 @@ const PORT = process.env.PORT || 3001;
 app.use(cors({ origin: false })); // mesma origem apenas (front e API são servidos juntos)
 app.use(express.json({ limit: '50mb' }));
 
-// ─── Autenticação (HTTP Basic) ─────────────────────────────────────────────────
-// Se APP_PASSWORD estiver definida, TODO acesso (página + API) exige senha.
-// Usuário: qualquer um (padrão "admin"); senha: APP_PASSWORD.
-const crypto = require('crypto');
-function safeEqual(a, b) {
-  const ha = crypto.createHash('sha256').update(String(a)).digest();
-  const hb = crypto.createHash('sha256').update(String(b)).digest();
-  return crypto.timingSafeEqual(ha, hb);
-}
-app.use((req, res, next) => {
-  const appPass = process.env.APP_PASSWORD;
-  if (!appPass) return next();
-  if (req.path === '/healthz') return next();
-  const header = req.headers.authorization || '';
-  if (header.startsWith('Basic ')) {
-    const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
-    const idx = decoded.indexOf(':');
-    const pass = idx >= 0 ? decoded.slice(idx + 1) : '';
-    if (safeEqual(pass, appPass)) return next();
-  }
-  res.set('WWW-Authenticate', 'Basic realm="PGManager", charset="UTF-8"');
-  res.status(401).send('Autenticação necessária');
-});
-app.get('/healthz', (req, res) => res.send('ok'));
-
 app.use(express.static(path.join(__dirname, '../frontend/public')));
 
 // Escapa identificadores SQL (schema/tabela/coluna)
